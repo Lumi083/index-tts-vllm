@@ -20,5 +20,5 @@ echo MSVC VER: %MSVC_VER%
 set HF_HUB_OFFLINE=1
 
 :run
-indextts2runtime\python.exe api_example_eps.py
+indextts2runtime\python.exe api_example_isp.py
 pause
