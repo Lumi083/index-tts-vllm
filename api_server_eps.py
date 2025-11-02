@@ -101,6 +101,58 @@ async def health_check():
     )
 
 
+@app.get("/voice/indextts/presets", responses={
+    200: {"content": {"application/octet-stream": {}}},
+    500: {"content": {"application/json": {}}}
+})
+async def tts_preset_get_endpoint(
+    text: str = None,
+    id: str = None,
+    emo_id: str = None,
+    emo_control_method: int = 0,
+    emo_text: str = None,
+    emo_weight: float = 1.0,
+    emo_vec: list = None,
+    emo_random: bool = False,
+    max_text_tokens_per_sentence: int = 120,
+    stream: bool = False,
+):
+    if emo_vec is None:
+        emo_vec = [0] * 8
+    data = {
+        "text": text,
+        "id": id,
+        "emo_id": emo_id,
+        "emo_control_method": emo_control_method,
+        "emo_text": emo_text,
+        "emo_weight": float(emo_weight),
+        "emo_vec": emo_vec,
+        "emo_random": emo_random,
+        "max_text_tokens_per_sentence": max_text_tokens_per_sentence,
+        "stream": stream,
+    }
+    return await tts_preset_handle(data)
+
+
+@app.post("/voice/indextts/presets", responses={
+    200: {"content": {"application/octet-stream": {}}},
+    500: {"content": {"application/json": {}}}
+})
+async def tts_preset_post_endpoint(request: Request):
+    try:
+        data = await request.json()
+        return await tts_preset_handle(data)
+    except Exception as ex:
+        tb_str = ''.join(traceback.format_exception(type(ex), ex, ex.__traceback__))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": str(tb_str)
+            }
+        )
+
+
 @app.post("/tts_url", responses={
     200: {"content": {"application/octet-stream": {}}},
     500: {"content": {"application/json": {}}}
@@ -108,6 +160,56 @@ async def health_check():
 async def tts_api_url(request: Request):
     try:
         data = await request.json()
+        return await tts_api_url_internal(data)
+    except Exception as ex:
+        tb_str = ''.join(traceback.format_exception(type(ex), ex, ex.__traceback__))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": str(tb_str)
+            }
+        )
+
+
+async def tts_preset_handle(data: dict):
+    try:
+        api_root_folder = now_dir
+        id = data.get("id")
+        emo_id = data.get("emo_id")
+        
+        spk_audio_path = None
+        if id:
+            for ext in ["wav", "mp3"]:
+                path = os.path.join(api_root_folder, "presets", "voice", id, f"prompt.{ext}")
+                if os.path.exists(path):
+                    spk_audio_path = path
+                    break
+        
+        emo_ref_path = None
+        if emo_id:
+            for ext in ["wav", "mp3"]:
+                path = os.path.join(api_root_folder, "presets", "emo", f"{emo_id}.{ext}")
+                if os.path.exists(path):
+                    emo_ref_path = path
+                    break
+        
+        data["spk_audio_path"] = spk_audio_path
+        data["emo_ref_path"] = emo_ref_path
+        return await tts_api_url_internal(data)
+    except Exception as ex:
+        tb_str = ''.join(traceback.format_exception(type(ex), ex, ex.__traceback__))
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "error": str(tb_str)
+            }
+        )
+
+
+async def tts_api_url_internal(data: dict):
+    try:
         emo_control_method = data.get("emo_control_method", 0)
         text = data["text"]
         spk_audio_path = data["spk_audio_path"]
@@ -143,14 +245,7 @@ async def tts_api_url(request: Request):
         stream = data.get("stream", False)
         if stream:
             
-            # this will create a streaming response
             async def audio_streamer():
-                """
-                Stream a WAV file: first yield a WAV header (PCM 16, mono, 22050Hz),
-                then yield successive PCM16 frames converted from the tensors produced
-                by tts.infer_stream(). This gives the frontend a playable WAV stream
-                with a proper header while still sending chunks as they are generated.
-                """
                 import wave as _wave
                 
                 with io.BytesIO() as _buf:
@@ -161,9 +256,6 @@ async def tts_api_url(request: Request):
                     _wf.writeframes(b'')
                     header_bytes = _buf.getvalue()
 
-                # Then stream PCM data frames converted to int16 bytes. Prepend the
-                # WAV header to the first chunk so clients that start reading
-                # immediately see a valid WAV file (header + data in first packet).
                 first_chunk_sent = False
                 async for wav_chunk in tts.infer_stream(spk_audio_prompt=spk_audio_path, text=text,
                                                         output_path=None,
@@ -172,39 +264,28 @@ async def tts_api_url(request: Request):
                                                         use_emo_text=(emo_control_method==3), emo_text=emo_text,use_random=emo_random,
                                                         max_text_tokens_per_sentence=int(max_text_tokens_per_sentence)):
                     try:
-                        # wav_chunk is a torch tensor on CPU or GPU; get numpy array
                         arr = wav_chunk.cpu().numpy()
                     except Exception:
                         raise RuntimeError("Failed to convert tensor to numpy array for streaming.")
 
-                    # Convert floats to int16 when needed. The model currently clamps
-                    # values scaled to int16 range (about +/-32767) but keeps dtype
-                    # float32, so detect that and cast. If floats are normalized in
-                    # [-1,1], scale to int16.
                     if arr.dtype.kind == 'f':
                         max_abs = float(np.max(np.abs(arr))) if arr.size > 0 else 0.0
                         if max_abs > 1.5:
-                            # values already in int16 range but as floats
                             arr_int16 = arr.astype(np.int16)
                         else:
-                            # normalized floats in [-1,1]
                             arr_int16 = (np.clip(arr, -1.0, 1.0) * 32767.0).astype(np.int16)
                     elif arr.dtype == np.int16:
                         arr_int16 = arr
                     else:
-                        # other integer types -> cast down
                         arr_int16 = arr.astype(np.int16)
 
                     chunk_bytes = arr_int16.tobytes()
                     if not first_chunk_sent:
-                        # Prepend header to first chunk
                         yield header_bytes + chunk_bytes
                         first_chunk_sent = True
                     else:
                         yield chunk_bytes
-            # return Response(content=audio_streamer(), media_type="audio/wav")
-            # AttributeError: 'async_generator' object has no attribute 'encode'
-            # Bugfix: wrap the async generator with StreamingResponse
+            
             return StreamingResponse(audio_streamer(), media_type="audio/wav")
 
         sr, wav = await tts.infer(spk_audio_prompt=spk_audio_path, text=text,

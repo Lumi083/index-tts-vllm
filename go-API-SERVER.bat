@@ -18,5 +18,5 @@ set PATH=%PATH%;%VS_PATH%\VC\Tools\MSVC\%MSVC_VER%\bin\Hostx64\x64
 echo MSVC VER: %MSVC_VER%
 
 :run
-indextts2runtime\python.exe api_server_eps.py
+indextts2runtime\python.exe api_server_eps.py --port 23467
 pause

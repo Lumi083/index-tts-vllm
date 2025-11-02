@@ -3,11 +3,46 @@ import os
 from typing import List, Optional
 import requests
 
-SERVER_PORT = 7860
+SERVER_PORT = 23467
 output_dir = "outputs"
 os.makedirs(output_dir, exist_ok=True)
 
 url = F"http://127.0.0.1:{SERVER_PORT}/tts_url"
+
+# 0. GET /voice/indextts/presets?id=0&emo_control_method=1&emo_id=&vec1=0.0&vec2=0.0&vec3=0.0&vec4=0.0&vec5=0.0&vec6=0.0&vec7=0.0&vec8=0.0&emo_weight=0.6&stream=False&max_text_tokens_per_segment=120&quick_token=0&lang=zh&audio_format=wav&_verify=0&text=你好，请问你是谁？ HTTP/1.
+# @dataclass
+# class IndexTTS2PresetRequestData:
+#     id: str
+#     emo_control_method: int = 0
+#     emo_id: str = ""
+#     vec1: float = 0.0
+#     vec2: float = 0.0
+#     vec3: float = 0.0
+#     vec4: float = 0.0
+#     vec5: float = 0.0
+#     vec6: float = 0.0
+#     vec7: float = 0.0
+#     vec8: float = 0.0
+#     emo_weight: float = 1.0
+#     stream: bool = False
+#     max_text_tokens_per_segment: int = 120
+#     quick_token: int = 0
+#     lang: str = "zh"
+#     audio_format: str = "wav"
+#     _verify: int = 0
+#     text: str = ""
+
+#     def to_dict(self) -> str:
+#         return asdict(self)
+    
+# data = IndexTTS2PresetRequestData(
+#     id="0",
+#     text="你好，请问你是谁？"
+# )
+# response = requests.get(
+#     f"http://127.0.0.1:{SERVER_PORT}/voice/indextts/presets", params=data.to_dict()
+# )
+# print(f"Preset Response: {response.status_code}, {response.reason}")
 
 
 @dataclass
@@ -40,6 +75,7 @@ data = IndexTTS2RequestData(
 import wave
 import io
 import soundfile as sf
+
 
 if data.stream:
     import time
